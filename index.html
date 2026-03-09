@@ -1,440 +1,218 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OJT End Date Visualizer Pro</title>
-<style>
-  :root {
-    --bg-main: #121212;
-    --bg-card: #1e1e1e;
-    --bg-input: #2d2d2d;
-    --accent: #61dafb;
-    --accent-hover: #4fa8c7;
-    --danger: #ff5555;
-    --holiday: #f39c12;
-    --text-main: #e0e0e0;
-    --border: #333;
-  }
-
-  body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; background: var(--bg-main); color: var(--text-main); }
-  h2, h3 { color: var(--accent); margin-top: 0; }
-  
-  .layout { display: flex; flex-wrap: wrap; gap: 20px; max-width: 1200px; margin: 0 auto; }
-  .panel { background: var(--bg-card); padding: 20px; border-radius: 8px; border: 1px solid var(--border); }
-  
-  /* Left Panel - Calendar */
-  .calendar-pane { flex: 1.8; min-width: 450px; }
-  .cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-weight: bold; font-size: 1.2rem; }
-  .cal-header button { background: var(--bg-input); border: 1px solid var(--border); color: white; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; transition: background 0.2s; }
-  .cal-header button:hover { background: var(--border); }
-  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; text-align: center; }
-  .cal-day-header { font-weight: bold; color: #888; font-size: 0.85rem; padding-bottom: 5px; }
-  .cal-cell { background: var(--bg-input); aspect-ratio: 1 / 1; border-radius: 4px; padding: 5px; font-size: 0.9rem; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; position: relative; border: 1px solid transparent; overflow: hidden; }
-  .cal-cell.empty { background: transparent; }
-  .cal-cell.faded { opacity: 0.3; pointer-events: none; }
-  .cal-cell .date-num { font-weight: bold; margin-bottom: 3px; align-self: flex-end; }
-  .cal-cell.work-day { border-color: var(--accent); }
-  .cal-cell.holiday-day { border-color: var(--holiday); background: rgba(243, 156, 18, 0.1); }
-  .badge { font-size: 0.7rem; padding: 2px 5px; border-radius: 3px; margin-top: 2px; width: 100%; max-width: 100%; box-sizing: border-box; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
-  .badge.hours { background: var(--accent); color: #000; font-weight: bold; }
-  .badge.holiday { background: var(--holiday); color: #000; }
-  .badge.start { background: #4caf50; color: #fff; }
-  .badge.end { background: var(--danger); color: #fff; }
-
-  /* Right Panel - Inputs */
-  .controls-pane { flex: 1; min-width: 300px; max-width: 400px; }
-  label { display: block; margin-top: 15px; font-size: 0.9rem; color: #aaa; }
-  input[type="number"], input[type="date"], input[type="text"] { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; background: var(--bg-input); color: white; border: 1px solid var(--border); border-radius: 4px; font-family: inherit; }
-  input[type="date"] { color-scheme: dark; cursor: pointer; }
-  input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.8; transition: opacity 0.2s; }
-  input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
-  
-  .days-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 5px; }
-  .day-input { text-align: center; font-size: 0.8rem; }
-  .day-input input { text-align: center; padding: 8px 0; }
-
-  #result { margin-top: 20px; padding: 15px; background: rgba(97, 218, 251, 0.1); border-left: 4px solid var(--accent); border-radius: 4px; font-size: 1.1rem; }
-
-  /* Holidays Panel */
-  .holidays-pane { width: 100%; margin-top: 0; }
-  .holidays-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 15px; }
-  .btn-add { background: var(--accent); color: #000; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 6px; }
-  .btn-add:hover { background: var(--accent-hover); }
-
-  .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-  .event-card { background: var(--bg-input); padding: 12px; border-radius: 6px; border-left: 4px solid var(--holiday); display: flex; flex-direction: column; gap: 8px; transition: opacity 0.2s; overflow: hidden; }
-  .event-card.disabled { opacity: 0.4; border-left-color: #555; }
-  .event-name { font-weight: bold; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .event-dates { font-size: 0.8rem; color: #aaa; }
-  .event-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px; }
-  
-  /* Modern Toggle Switch */
-  .toggle-label { font-size: 0.8rem; display: flex; align-items: center; gap: 8px; cursor: pointer; color: #ccc; }
-  .switch { position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0; }
-  .switch input { opacity: 0; width: 0; height: 0; }
-  .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #555; transition: 0.2s; border-radius: 20px; }
-  .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px; background-color: white; transition: 0.2s; border-radius: 50%; }
-  .switch input:checked + .slider { background-color: var(--accent); }
-  .switch input:checked + .slider:before { transform: translateX(16px); background-color: #121212; }
-
-  .btn-delete { background: transparent; color: var(--danger); border: 1px solid var(--danger); padding: 6px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
-  .btn-delete:hover { background: var(--danger); color: #fff; }
-
-  /* Dialog */
-  dialog { background: var(--bg-card); color: white; border: 1px solid var(--border); border-radius: 8px; padding: 20px; width: 300px; max-width: 90%; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-  dialog::backdrop { background: rgba(0, 0, 0, 0.7); }
-  .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-  .btn-cancel { background: transparent; border: 1px solid var(--border); color: white; padding: 8px 15px; border-radius: 4px; cursor: pointer; }
-  .btn-cancel:hover { background: var(--bg-input); }
-  .btn-save { background: var(--accent); color: #000; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OJT End Date Visualizer Pro</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
-
-<div class="layout">
-  <!-- Calendar Panel -->
-  <div class="panel calendar-pane">
-    <div class="cal-header">
-      <button onclick="changeMonth(-1)" title="Previous Month">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-      </button>
-      <span id="calMonthYear">May 2026</span>
-      <button onclick="changeMonth(1)" title="Next Month">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-      </button>
-    </div>
-    <div class="cal-grid" id="calGrid">
-      <!-- Generated via JS -->
-    </div>
-  </div>
-
-  <!-- Controls Panel -->
-  <div class="panel controls-pane">
-    <h2>OJT Settings</h2>
-    
-    <label>Target OJT Hours:</label>
-    <input type="number" id="targetHours" value="400">
-
-    <label>Start Date:</label>
-    <input type="date" id="startDate" value="2026-03-09">
-
-    <label>Expected Hours per Day:</label>
-    <div class="days-grid">
-      <div class="day-input">M<input type="number" id="h1" value="8" min="0" max="12"></div>
-      <div class="day-input">T<input type="number" id="h2" value="8" min="0" max="12"></div>
-      <div class="day-input">W<input type="number" id="h3" value="8" min="0" max="12"></div>
-      <div class="day-input">Th<input type="number" id="h4" value="8" min="0" max="12"></div>
-      <div class="day-input">F<input type="number" id="h5" value="8" min="0" max="12"></div>
-      <div class="day-input">S<input type="number" id="h6" value="0" min="0" max="12"></div>
-      <div class="day-input">Su<input type="number" id="h0" value="0" min="0" max="12"></div>
-    </div>
-
-    <div id="result">
-      <div id="finalDateText">Calculating...</div>
-    </div>
-  </div>
-
-  <!-- Holidays Panel -->
-  <div class="panel holidays-pane">
-    <div class="holidays-header">
-      <h3>Holidays & Agendas</h3>
-      <button class="btn-add" onclick="document.getElementById('eventModal').showModal()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-        Add Event
-      </button>
-    </div>
-    <div class="cards-grid" id="cardsGrid">
-      <!-- Cards injected here -->
-    </div>
-  </div>
-</div>
-
-<!-- Add Event Modal -->
-<dialog id="eventModal">
-  <h3 style="margin-top:0;">Add New Event</h3>
-  
-  <label>Event Name:</label>
-  <input type="text" id="evName" placeholder="e.g. Midterm Exams">
-  
-  <label>Start Date:</label>
-  <input type="date" id="evStart">
-  
-  <label>End Date (Optional for single day):</label>
-  <input type="date" id="evEnd">
-  
-  <div class="dialog-actions">
-    <button class="btn-cancel" onclick="document.getElementById('eventModal').close()">Cancel</button>
-    <button class="btn-save" onclick="saveEvent()">Save Event</button>
-  </div>
-</dialog>
-
-<script>
-  let currentCalDate = new Date(2026, 2, 1); // Defaults to March 2026 based on start date
-  let ojtData = new Map(); // Stores calculation results for the calendar to render
-  let finalEndDateStr = null;
-
-  // Initial Data
-  let events = [
-    { id: 'h1', start: '2026-01-01', end: '2026-01-01', name: "New Year's Day", active: true },
-    { id: 'h2', start: '2026-02-25', end: '2026-02-25', name: "EDSA Revolution", active: true },
-    { id: 'h3', start: '2026-03-20', end: '2026-03-20', name: "Eid al-Fitr", active: true },
-    { id: 'h4', start: '2026-04-02', end: '2026-04-02', name: "Maundy Thursday", active: true },
-    { id: 'h5', start: '2026-04-03', end: '2026-04-03', name: "Good Friday", active: true },
-    { id: 'h6', start: '2026-04-09', end: '2026-04-09', name: "Araw ng Kagitingan", active: true },
-    { id: 'h7', start: '2026-05-01', end: '2026-05-01', name: "Labor Day", active: true },
-    { id: 'h8', start: '2026-06-12', end: '2026-06-12', name: "Independence Day", active: true },
-    { id: 'h9', start: '2026-08-21', end: '2026-08-21', name: "Ninoy Aquino Day", active: true },
-    { id: 'h10', start: '2026-08-31', end: '2026-08-31', name: "National Heroes Day", active: true },
-    { id: 'h11', start: '2026-11-01', end: '2026-11-02', name: "Undas", active: true }, // Grouped as range
-    { id: 'h12', start: '2026-11-30', end: '2026-11-30', name: "Bonifacio Day", active: true },
-    { id: 'h13', start: '2026-12-08', end: '2026-12-08', name: "Immaculate Conception", active: true },
-    { id: 'h14', start: '2026-12-24', end: '2026-12-25', name: "Christmas", active: true },
-    { id: 'h15', start: '2026-12-30', end: '2026-12-30', name: "Rizal Day", active: true },
-    { id: 'h16', start: '2026-12-31', end: '2026-12-31', name: "New Year's Eve", active: true }
-  ];
-
-  function pad(n) { return n.toString().padStart(2, '0'); }
-
-  // Check if a specific date falls within any active event
-  function getEventForDate(dateStr) {
-    for (const ev of events) {
-      if (!ev.active) continue;
-      const startStr = ev.start;
-      const endStr = ev.end || ev.start;
-      if (dateStr >= startStr && dateStr <= endStr) {
-        return ev.name;
-      }
-    }
-    return null;
-  }
-
-  function saveEvent() {
-    const name = document.getElementById('evName').value.trim();
-    const start = document.getElementById('evStart').value;
-    const end = document.getElementById('evEnd').value;
-
-    if (!name || !start) return alert('Name and Start Date are required.');
-
-    events.push({
-      id: Date.now().toString(),
-      name: name,
-      start: start,
-      end: end || start,
-      active: true
-    });
-
-    // Sort events by start date
-    events.sort((a, b) => a.start.localeCompare(b.start));
-
-    document.getElementById('eventModal').close();
-    document.getElementById('evName').value = '';
-    document.getElementById('evStart').value = '';
-    document.getElementById('evEnd').value = '';
-    
-    updateAll();
-  }
-
-  function toggleEvent(id) {
-    const ev = events.find(e => e.id === id);
-    if (ev) ev.active = !ev.active;
-    updateAll();
-  }
-
-  function deleteEvent(id) {
-    events = events.filter(e => e.id !== id);
-    updateAll();
-  }
-
-  function renderCards() {
-    const container = document.getElementById("cardsGrid");
-    container.innerHTML = "";
-    
-    events.forEach(ev => {
-      const isRange = ev.end && ev.end !== ev.start;
-      const dateText = isRange ? `${ev.start} to ${ev.end}` : ev.start;
-      
-      container.innerHTML += `
-        <div class="event-card ${!ev.active ? 'disabled' : ''}">
-          <div class="event-name">${ev.name}</div>
-          <div class="event-dates">${dateText}</div>
-          <div class="event-actions">
-            <label class="toggle-label">
-              <div class="switch">
-                <input type="checkbox" ${ev.active ? 'checked' : ''} onchange="toggleEvent('${ev.id}')">
-                <span class="slider"></span>
-              </div>
-              Active
-            </label>
-            <button class="btn-delete" onclick="deleteEvent('${ev.id}')" title="Delete Event">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
+    <header class="topbar">
+        <h1 class="app-title">OJT Tracker</h1>
+        <div class="topbar-controls" aria-label="Display settings">
+            <button id="themeToggleBtn" class="theme-icon-btn" type="button" aria-label="Toggle dark mode"
+                aria-pressed="true" title="Toggle light/dark mode">
+                <svg class="theme-icon sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="4"></circle>
+                    <path d="M12 2v2"></path>
+                    <path d="M12 20v2"></path>
+                    <path d="M4.93 4.93l1.41 1.41"></path>
+                    <path d="M17.66 17.66l1.41 1.41"></path>
+                    <path d="M2 12h2"></path>
+                    <path d="M20 12h2"></path>
+                    <path d="M6.34 17.66l-1.41 1.41"></path>
+                    <path d="M19.07 4.93l-1.41 1.41"></path>
+                </svg>
+                <svg class="theme-icon moon" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                    aria-hidden="true">
+                    <path
+                        d="M21 12.79A9 9 0 1 1 11.21 3c.05.56.08 1.13.08 1.71a7 7 0 0 0 8 6.92c.57 0 1.12-.05 1.66-.14.03.43.05.87.05 1.3z">
+                    </path>
+                </svg>
             </button>
-          </div>
+
+            <label class="color-dot-control" for="primaryColor" title="Pick primary color">
+                <span class="sr-only">Primary color</span>
+                <input type="color" id="primaryColor" value="#61dafb">
+            </label>
         </div>
-      `;
-    });
-  }
+    </header>
 
-  function calculateDate() {
-    ojtData.clear();
-    finalEndDateStr = null;
-    
-    const targetHours = parseInt(document.getElementById("targetHours").value);
-    const startDateVal = document.getElementById("startDate").value;
-    
-    if (!startDateVal || targetHours <= 0 || isNaN(targetHours)) {
-        document.getElementById("finalDateText").innerHTML = "Waiting for valid inputs...";
-        return;
-    }
-    
-    const hoursMap = {
-      0: Math.min(12, parseInt(document.getElementById("h0").value) || 0),
-      1: Math.min(12, parseInt(document.getElementById("h1").value) || 0),
-      2: Math.min(12, parseInt(document.getElementById("h2").value) || 0),
-      3: Math.min(12, parseInt(document.getElementById("h3").value) || 0),
-      4: Math.min(12, parseInt(document.getElementById("h4").value) || 0),
-      5: Math.min(12, parseInt(document.getElementById("h5").value) || 0),
-      6: Math.min(12, parseInt(document.getElementById("h6").value) || 0)
-    };
+    <button id="openSettingsDrawer" class="settings-drawer-toggle" type="button" aria-controls="settingsPane"
+        aria-expanded="false" title="Open OJT settings">
+        <span class="drawer-toggle-text">OJT Settings</span>
+        <svg class="drawer-toggle-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z">
+            </path>
+        </svg>
+    </button>
 
-    if (Object.values(hoursMap).every(h => h === 0)) {
-        document.getElementById("finalDateText").innerHTML = "No working days selected.";
-        return;
-    }
+    <button id="drawerBackdrop" class="drawer-backdrop" type="button" aria-label="Close settings panel"></button>
 
-    const [y, m, d] = startDateVal.split('-').map(Number);
-    let currentDate = new Date(y, m - 1, d);
-    let accumulated = 0;
-    let iterations = 0; 
-
-    // Update calendar starting view to match input start date
-    currentCalDate = new Date(y, m - 1, 1);
-
-    while (accumulated < targetHours && iterations < 1500) {
-      const dateStr = `${currentDate.getFullYear()}-${pad(currentDate.getMonth()+1)}-${pad(currentDate.getDate())}`;
-      const dayOfWeek = currentDate.getDay();
-      const dailyHours = hoursMap[dayOfWeek];
-
-      const holidayName = getEventForDate(dateStr);
-
-      if (holidayName) {
-        ojtData.set(dateStr, { type: 'holiday', name: holidayName });
-      } else if (dailyHours > 0) {
-        let hoursLogged = dailyHours;
-        if (accumulated + dailyHours >= targetHours) {
-           hoursLogged = targetHours - accumulated;
-           accumulated = targetHours;
-           finalEndDateStr = dateStr;
-           ojtData.set(dateStr, { type: 'work', hours: hoursLogged, isEnd: true });
-           break;
-        } else {
-           accumulated += dailyHours;
-           ojtData.set(dateStr, { type: 'work', hours: hoursLogged });
-        }
-      }
-      
-      currentDate.setDate(currentDate.getDate() + 1);
-      iterations++;
-    }
-
-    const finalStr = finalEndDateStr ? new Date(finalEndDateStr).toDateString() : currentDate.toDateString();
-    document.getElementById("finalDateText").innerHTML = `Ends on: <strong>${finalStr}</strong> <br><small>(${accumulated}/${targetHours} hrs)</small>`;
-  }
-
-  function changeMonth(dir) {
-    currentCalDate.setMonth(currentCalDate.getMonth() + dir);
-    renderCalendar();
-  }
-
-  function renderCalendar() {
-    const year = currentCalDate.getFullYear();
-    const month = currentCalDate.getMonth();
-    
-    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    document.getElementById("calMonthYear").innerText = `${monthNames[month]} ${year}`;
-    
-    const grid = document.getElementById("calGrid");
-    grid.innerHTML = `
-      <div class="cal-day-header">Sun</div><div class="cal-day-header">Mon</div><div class="cal-day-header">Tue</div>
-      <div class="cal-day-header">Wed</div><div class="cal-day-header">Thu</div><div class="cal-day-header">Fri</div><div class="cal-day-header">Sat</div>
-    `;
-
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const prevMonthDays = new Date(year, month, 0).getDate();
-    const startDateVal = document.getElementById("startDate").value;
-
-    // Helper function to build cells so we don't repeat code for faded days
-    const generateCell = (dateObj, isFaded) => {
-      const y = dateObj.getFullYear();
-      const m = pad(dateObj.getMonth() + 1);
-      const d = pad(dateObj.getDate());
-      const dateStr = `${y}-${m}-${d}`;
-      
-      const data = ojtData.get(dateStr);
-      let cellClass = "cal-cell" + (isFaded ? " faded" : "");
-      let badgesHTML = "";
-
-      if (dateStr === startDateVal) {
-        badgesHTML += `<div class="badge start">Start</div>`;
-      }
-
-      if (data) {
-        if (data.type === 'work') {
-          if (!isFaded) cellClass += " work-day";
-          badgesHTML += `<div class="badge hours">${data.hours} hrs</div>`;
-          if (data.isEnd) badgesHTML += `<div class="badge end">End</div>`;
-        } else if (data.type === 'holiday') {
-          if (!isFaded) cellClass += " holiday-day";
-          badgesHTML += `<div class="badge holiday" title="${data.name}">${data.name}</div>`;
-        }
-      }
-
-      return `
-        <div class="${cellClass}">
-          <div class="date-num">${dateObj.getDate()}</div>
-          ${badgesHTML}
+    <div class="layout">
+        <div class="panel calendar-pane">
+            <div class="cal-header">
+                <div class="cal-nav-group">
+                    <button onclick="jumpToStartMonth()" title="Jump to Start Month" aria-label="Jump to start month">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="19 18 13 12 19 6"></polyline>
+                            <polyline points="11 18 5 12 11 6"></polyline>
+                        </svg>
+                    </button>
+                    <button onclick="changeMonth(-1)" title="Previous Month" aria-label="Previous month">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                    </button>
+                </div>
+                <span id="calMonthYear">March 2026</span>
+                <div class="cal-nav-group">
+                    <button onclick="changeMonth(1)" title="Next Month" aria-label="Next month">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                    </button>
+                    <button onclick="jumpToEndMonth()" title="Jump to End Month" aria-label="Jump to end month">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="5 18 11 12 5 6"></polyline>
+                            <polyline points="13 18 19 12 13 6"></polyline>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="cal-grid" id="calGrid"></div>
         </div>
-      `;
-    };
 
-    // Pad empty days from previous month
-    for (let i = 0; i < firstDay; i++) {
-      const pDay = prevMonthDays - firstDay + i + 1;
-      grid.innerHTML += generateCell(new Date(year, month - 1, pDay), true);
-    }
+        <div class="panel controls-pane" id="settingsPane">
+            <div class="controls-header">
+                <h2>OJT Settings</h2>
+                <button id="closeSettingsDrawer" class="drawer-close" type="button"
+                    aria-label="Close OJT settings">x</button>
+            </div>
 
-    // Fill actual days
-    for (let i = 1; i <= daysInMonth; i++) {
-      grid.innerHTML += generateCell(new Date(year, month, i), false);
-    }
+            <label for="targetHours">Target OJT Hours:</label>
+            <input type="number" id="targetHours" value="400">
 
-    // Pad empty days from next month to complete the 42-cell grid
-    const totalFilled = firstDay + daysInMonth;
-    for (let i = 1; i <= 42 - totalFilled; i++) {
-      grid.innerHTML += generateCell(new Date(year, month + 1, i), true);
-    }
-  }
+            <label for="startDate">Start Date:</label>
+            <input type="date" id="startDate" value="2026-03-09">
 
-  function updateAll() {
-    calculateDate();
-    renderCards();
-    renderCalendar();
-  }
+            <label>Expected Hours per Day:</label>
+            <div class="days-grid">
+                <div class="day-input">M<input type="number" id="h1" value="8" min="0" max="12"></div>
+                <div class="day-input">T<input type="number" id="h2" value="8" min="0" max="12"></div>
+                <div class="day-input">W<input type="number" id="h3" value="8" min="0" max="12"></div>
+                <div class="day-input">Th<input type="number" id="h4" value="8" min="0" max="12"></div>
+                <div class="day-input">F<input type="number" id="h5" value="8" min="0" max="12"></div>
+                <div class="day-input">S<input type="number" id="h6" value="0" min="0" max="12"></div>
+                <div class="day-input">Su<input type="number" id="h0" value="0" min="0" max="12"></div>
+            </div>
 
-  // Bind real-time event listeners
-  document.addEventListener('DOMContentLoaded', () => {
-    updateAll();
-    
-    const inputs = document.querySelectorAll('.controls-pane input');
-    inputs.forEach(input => {
-      input.addEventListener('input', updateAll);
-      input.addEventListener('change', updateAll);
-    });
-  });
-</script>
+            <div id="result">
+                <div id="finalDateText">Calculating...</div>
+            </div>
+
+            <div class="setting-toggle-row">
+                <span>Use Local Holiday Names</span>
+                <label class="switch" for="holidayNameLocalToggle">
+                    <input type="checkbox" id="holidayNameLocalToggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="settings-actions">
+                <button class="btn-secondary btn-reset-app" type="button" onclick="resetAppData()">Reset App
+                    Data</button>
+            </div>
+        </div>
+
+        <div class="panel holidays-pane">
+            <div class="holidays-header">
+                <h3>Holidays &amp; Agendas</h3>
+                <div class="holidays-actions">
+                    <input type="search" id="holidaySearch" class="holiday-search"
+                        placeholder="Search holidays and agendas" aria-label="Search holidays and agendas">
+                    <button id="syncPHBtn" class="btn-secondary btn-sync" type="button" onclick="syncPHHolidays()">
+                        <svg class="sync-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                            aria-hidden="true">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <polyline points="1 20 1 14 7 14"></polyline>
+                            <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"></path>
+                            <path d="M20.49 15a9 9 0 0 1-14.13 3.36L1 14"></path>
+                        </svg>
+                        Sync PH
+                    </button>
+                    <button class="btn-clear-all" type="button" onclick="clearAllEvents()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2">
+                            </path>
+                        </svg>
+                        Clear All
+                    </button>
+                    <button class="btn-add" onclick="document.getElementById('eventModal').showModal()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Add Event
+                    </button>
+                </div>
+            </div>
+            <div class="cards-grid" id="cardsGrid"></div>
+        </div>
+    </div>
+
+    <dialog id="eventModal">
+        <h3>Add New Event</h3>
+
+        <label for="evName">Event Name:</label>
+        <input type="text" id="evName" placeholder="e.g. Midterm Exams">
+
+        <label for="evStart">Start Date:</label>
+        <input type="date" id="evStart">
+
+        <label for="evEnd">End Date (Optional for single day):</label>
+        <input type="date" id="evEnd">
+
+        <div class="dialog-actions">
+            <button class="btn-cancel" onclick="document.getElementById('eventModal').close()">Cancel</button>
+            <button class="btn-save" onclick="saveEvent()">Save Event</button>
+        </div>
+    </dialog>
+
+    <dialog id="clearAllModal">
+        <h3>Clear All Events?</h3>
+        <p class="dialog-text">This will remove all synced holidays and agenda events.</p>
+        <div class="dialog-actions">
+            <button class="btn-cancel" type="button" onclick="closeClearAllDialog()">Cancel</button>
+            <button class="btn-save btn-danger" type="button" onclick="confirmClearAllEvents()">Clear All</button>
+        </div>
+    </dialog>
+
+    <dialog id="resetAppModal">
+        <h3>Reset App Data?</h3>
+        <p class="dialog-text">This will clear all saved settings, themes, and events, then sync PH holidays again.</p>
+        <div class="dialog-actions">
+            <button class="btn-cancel" type="button" onclick="closeResetAppDialog()">Cancel</button>
+            <button class="btn-save btn-danger" type="button" onclick="confirmResetAppData()">Reset App</button>
+        </div>
+    </dialog>
+
+    <script src="script.js"></script>
 </body>
+
 </html>
