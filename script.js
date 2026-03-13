@@ -1,5 +1,6 @@
 let currentCalDate = new Date(2026, 2, 1);
 let ojtData = new Map();
+let manualHourOverrides = new Map();
 let finalEndDateStr = null;
 let events = [];
 let themeTransitionTimeout = null;
@@ -9,11 +10,32 @@ const STORAGE_KEYS = {
     theme: "ojt-theme",
     primaryColor: "ojt-primary-color",
     events: "ojt-events",
-    settings: "ojt-settings"
+    settings: "ojt-settings",
+    dayHours: "ojt-day-hours",
+    calendarPaneWidth: "ojt-calendar-pane-width"
 };
 
-const DEFAULT_PRIMARY_COLOR = "#61dafb";
-const SETTINGS_FIELD_IDS = ["targetHours", "startDate", "h0", "h1", "h2", "h3", "h4", "h5", "h6", "holidayNameLocalToggle"];
+const DEFAULT_PRIMARY_COLOR = "#00b3ff";
+const MAX_DAILY_HOURS = 24;
+const DEFAULT_CALENDAR_WIDTH_RATIO = 0.50;
+const MIN_CALENDAR_PANE_WIDTH = 420;
+const MIN_RIGHT_PANE_WIDTH = 360;
+const LAYOUT_SPLITTER_MIN_VIEWPORT = 1181;
+const LAYOUT_SPLITTER_STEP = 28;
+const SETTINGS_FIELD_IDS = [
+    "targetHours",
+    "startDate",
+    "h0",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "holidayNameLocalToggle",
+    "hoursCardPerDayToggle",
+    "followTimeInOutToggle"
+];
 
 function pad(n) {
     return n.toString().padStart(2, "0");
@@ -169,6 +191,16 @@ function useLocalHolidayNames() {
     return Boolean(toggle && toggle.checked);
 }
 
+function showPerDayHoursCard() {
+    const toggle = document.getElementById("hoursCardPerDayToggle");
+    return Boolean(toggle && toggle.checked);
+}
+
+function followTimeInOutForComputation() {
+    const toggle = document.getElementById("followTimeInOutToggle");
+    return !toggle || toggle.checked;
+}
+
 function getEventDisplayName(eventItem) {
     if (useLocalHolidayNames()) {
         return eventItem.localName || eventItem.enName || eventItem.name;
@@ -256,6 +288,321 @@ function initializeEvents() {
     if (storedEvents.length > 0) {
         saveEventsToStorage();
     }
+}
+
+function normalizeHours(hoursValue) {
+    const parsed = Number.parseFloat(hoursValue);
+    if (Number.isNaN(parsed) || !Number.isFinite(parsed)) {
+        return null;
+    }
+
+    const normalized = Math.round(clamp(parsed, 0, MAX_DAILY_HOURS) * 100) / 100;
+    return normalized;
+}
+
+function formatHours(hoursValue) {
+    if (hoursValue === null || hoursValue === undefined || Number.isNaN(hoursValue)) {
+        return "";
+    }
+
+    const totalMinutes = Math.round(hoursValue * 60);
+    return formatMinutesAsHoursAndMinutes(totalMinutes);
+}
+
+function formatHoursForNumberInput(hoursValue) {
+    if (hoursValue === null || hoursValue === undefined || Number.isNaN(hoursValue)) {
+        return "";
+    }
+
+    return Number.isInteger(hoursValue)
+        ? `${hoursValue}`
+        : hoursValue.toFixed(2).replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
+}
+
+function escapeAttribute(value) {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
+
+function normalizeWholeNumber(value, min, max, fallback = 0) {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed) || !Number.isFinite(parsed)) {
+        return fallback;
+    }
+
+    return clamp(parsed, min, max);
+}
+
+function normalizeTimeValue(timeValue) {
+    if (typeof timeValue !== "string") {
+        return "";
+    }
+
+    const trimmed = timeValue.trim();
+    if (!trimmed) {
+        return "";
+    }
+
+    // Accept 24h and AM/PM formats (with optional seconds) from current and older stored data.
+    const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?\s*([aApP][mM])?$/);
+    if (!match) {
+        return "";
+    }
+
+    let hours = Number.parseInt(match[1], 10);
+    const minutes = Number.parseInt(match[2], 10);
+    const seconds = match[3] === undefined ? 0 : Number.parseInt(match[3], 10);
+    const meridiem = match[4] ? match[4].toLowerCase() : "";
+
+    if (meridiem) {
+        if (hours < 1 || hours > 12) {
+            return "";
+        }
+
+        if (meridiem === "am") {
+            hours = hours % 12;
+        } else {
+            hours = (hours % 12) + 12;
+        }
+    }
+
+    if (
+        Number.isNaN(hours)
+        || Number.isNaN(minutes)
+        || Number.isNaN(seconds)
+        || hours < 0
+        || hours > 23
+        || minutes < 0
+        || minutes > 59
+        || seconds < 0
+        || seconds > 59
+    ) {
+        return "";
+    }
+
+    return `${pad(hours)}:${pad(minutes)}`;
+}
+
+function isValidTimeValue(timeValue) {
+    return normalizeTimeValue(timeValue) !== "";
+}
+
+function parseTimeToMinutes(timeValue) {
+    const normalized = normalizeTimeValue(timeValue);
+    if (!normalized) {
+        return null;
+    }
+
+    const [hours, minutes] = normalized.split(":").map(Number);
+
+    return hours * 60 + minutes;
+}
+
+function formatMinutesAsHoursAndMinutes(totalMinutes) {
+    const safeMinutes = Math.max(0, Math.floor(totalMinutes));
+    const hours = Math.floor(safeMinutes / 60);
+    const minutes = safeMinutes % 60;
+
+    if (minutes === 0) {
+        return `${hours}h`;
+    }
+
+    return `${hours}h ${minutes}m`;
+}
+
+function roundMinutesToHours(totalMinutes) {
+    return Math.round((Math.max(0, totalMinutes) / 60) * 100) / 100;
+}
+
+function normalizeDayHoursEntry(rawEntry) {
+    if (rawEntry === null || rawEntry === undefined) {
+        return null;
+    }
+
+    // Backward compatibility: older storage used date => number.
+    if (typeof rawEntry === "number" || typeof rawEntry === "string") {
+        const creditedHours = normalizeHours(rawEntry);
+        if (creditedHours === null) {
+            return null;
+        }
+
+        return {
+            creditedHours,
+            timeIn: "",
+            timeOut: "",
+            deductHours: 0,
+            deductMinutes: 0
+        };
+    }
+
+    if (typeof rawEntry !== "object" || Array.isArray(rawEntry)) {
+        return null;
+    }
+
+    const creditedHours = normalizeHours(rawEntry.creditedHours);
+    const timeIn = normalizeTimeValue(rawEntry.timeIn);
+    const timeOut = normalizeTimeValue(rawEntry.timeOut);
+    const deductHours = normalizeWholeNumber(rawEntry.deductHours, 0, 23, 0);
+    const deductMinutes = normalizeWholeNumber(rawEntry.deductMinutes, 0, 59, 0);
+
+    if (creditedHours === null && !timeIn && !timeOut && deductHours === 0 && deductMinutes === 0) {
+        return null;
+    }
+
+    return {
+        creditedHours,
+        timeIn,
+        timeOut,
+        deductHours,
+        deductMinutes
+    };
+}
+
+function buildManualEntrySummary(dateStr, entry) {
+    const normalizedEntry = normalizeDayHoursEntry(entry);
+    if (!normalizedEntry) {
+        return {
+            hasOverride: false,
+            effectiveHours: 0,
+            displayHours: null,
+            displaySource: "none",
+            tooltip: ""
+        };
+    }
+
+    const creditedHours = normalizedEntry.creditedHours;
+    const hasBothTimes = normalizedEntry.timeIn && normalizedEntry.timeOut;
+
+    let grossMinutes = null;
+    let netMinutes = null;
+    let timeBasedHours = null;
+
+    if (hasBothTimes) {
+        const timeInMinutes = parseTimeToMinutes(normalizedEntry.timeIn);
+        const timeOutMinutes = parseTimeToMinutes(normalizedEntry.timeOut);
+        if (timeInMinutes !== null && timeOutMinutes !== null && timeOutMinutes > timeInMinutes) {
+            grossMinutes = timeOutMinutes - timeInMinutes;
+            const deductionTotal = normalizedEntry.deductHours * 60 + normalizedEntry.deductMinutes;
+            netMinutes = Math.max(0, grossMinutes - deductionTotal);
+            timeBasedHours = roundMinutesToHours(netMinutes);
+        }
+    }
+
+    const shouldFollowTime = followTimeInOutForComputation();
+    const preferredSource = shouldFollowTime ? "time-in-out" : "credited";
+    const fallbackSource = shouldFollowTime ? "credited" : "time-in-out";
+    const preferredHours = shouldFollowTime ? timeBasedHours : creditedHours;
+    const fallbackHours = shouldFollowTime ? creditedHours : timeBasedHours;
+
+    const selectedSourceHours = preferredHours !== null ? preferredHours : fallbackHours;
+    const hasSelectedSourceValue = selectedSourceHours !== null;
+
+    const effectiveHours = hasSelectedSourceValue ? selectedSourceHours : 0;
+    const computationSource = hasSelectedSourceValue
+        ? (preferredHours !== null ? preferredSource : fallbackSource)
+        : "none";
+    const displayHours = hasSelectedSourceValue ? selectedSourceHours : null;
+    const displaySource = hasSelectedSourceValue
+        ? (preferredHours !== null ? preferredSource : fallbackSource)
+        : "none";
+
+    const tooltipLines = [dateStr];
+    tooltipLines.push(`Credited: ${creditedHours === null ? "not set" : formatHours(creditedHours)}`);
+    tooltipLines.push(`Time In/Out: ${hasBothTimes ? `${normalizedEntry.timeIn} - ${normalizedEntry.timeOut}` : "not set"}`);
+    tooltipLines.push(`Deduction: ${normalizedEntry.deductHours}h ${normalizedEntry.deductMinutes}m`);
+
+    if (grossMinutes !== null && netMinutes !== null && timeBasedHours !== null) {
+        tooltipLines.push(`Net Time: ${formatMinutesAsHoursAndMinutes(netMinutes)} (${formatHours(timeBasedHours)})`);
+    }
+
+    if (hasSelectedSourceValue && preferredHours === null) {
+        tooltipLines.push(`Used for compute: ${computationSource} (fallback from ${preferredSource})`);
+    } else {
+        tooltipLines.push(`Used for compute: ${computationSource}`);
+    }
+    tooltipLines.push(`Shown on card: ${displaySource}`);
+
+    return {
+        hasOverride: hasSelectedSourceValue,
+        normalizedEntry,
+        creditedHours,
+        timeBasedHours,
+        effectiveHours,
+        displayHours,
+        displaySource,
+        computationSource,
+        tooltip: tooltipLines.join("\n")
+    };
+}
+
+function normalizeStoredDayHours(rawHours) {
+    if (!rawHours || typeof rawHours !== "object" || Array.isArray(rawHours)) {
+        return new Map();
+    }
+
+    const normalized = new Map();
+    Object.entries(rawHours).forEach(([dateStr, entryValue]) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            return;
+        }
+
+        const safeEntry = normalizeDayHoursEntry(entryValue);
+        if (!safeEntry) {
+            return;
+        }
+
+        normalized.set(dateStr, safeEntry);
+    });
+
+    return normalized;
+}
+
+function saveDayHoursToStorage() {
+    const payload = Object.fromEntries(manualHourOverrides.entries());
+    setStoredValue(STORAGE_KEYS.dayHours, JSON.stringify(payload));
+}
+
+function loadDayHoursFromStorage() {
+    const raw = getStoredValue(STORAGE_KEYS.dayHours);
+    if (!raw) {
+        return new Map();
+    }
+
+    try {
+        return normalizeStoredDayHours(JSON.parse(raw));
+    } catch {
+        return new Map();
+    }
+}
+
+function initializeDayHours() {
+    manualHourOverrides = loadDayHoursFromStorage();
+    if (manualHourOverrides.size > 0) {
+        saveDayHoursToStorage();
+    }
+}
+
+function getConfiguredHoursForDay(dayIndex) {
+    return Math.min(MAX_DAILY_HOURS, Number.parseInt(document.getElementById(`h${dayIndex}`).value, 10) || 0);
+}
+
+function getDefaultHoursForDate(dateStr) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        return 0;
+    }
+
+    const [year, month, day] = dateStr.split("-").map(Number);
+    const dateObj = new Date(year, month - 1, day);
+    const holidayName = getEventForDate(dateStr);
+
+    if (holidayName) {
+        return 0;
+    }
+
+    return getConfiguredHoursForDay(dateObj.getDay());
 }
 
 function saveSettingsToStorage() {
@@ -483,6 +830,146 @@ function getEventForDate(dateStr) {
     return null;
 }
 
+function closeDayHoursDialog() {
+    const dayHoursModal = document.getElementById("dayHoursModal");
+    if (dayHoursModal && dayHoursModal.open) {
+        dayHoursModal.close();
+    }
+}
+
+function openDayHoursDialog(dateStr) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        return;
+    }
+
+    const dayHoursModal = document.getElementById("dayHoursModal");
+    const dateField = document.getElementById("dayHoursDate");
+    const valueField = document.getElementById("dayHoursValue");
+    const timeInField = document.getElementById("dayTimeIn");
+    const timeOutField = document.getElementById("dayTimeOut");
+    const deductHoursField = document.getElementById("dayDeductHours");
+    const deductMinutesField = document.getElementById("dayDeductMinutes");
+    const dateLabel = document.getElementById("dayHoursDateLabel");
+    const defaultHint = document.getElementById("dayHoursDefaultHint");
+
+    if (!dayHoursModal || !dateField || !valueField || !timeInField || !timeOutField
+        || !deductHoursField || !deductMinutesField || !dateLabel || !defaultHint) {
+        return;
+    }
+
+    dateField.value = dateStr;
+    const [year, month, day] = dateStr.split("-").map(Number);
+    const displayDate = new Date(year, month - 1, day).toDateString();
+    dateLabel.textContent = displayDate;
+
+    const defaultHours = getDefaultHoursForDate(dateStr);
+    const storedEntry = manualHourOverrides.get(dateStr);
+    const normalizedEntry = normalizeDayHoursEntry(storedEntry);
+    defaultHint.textContent = `Default for this date: ${formatHours(defaultHours)} (clear all fields to remove override).`;
+
+    if (normalizedEntry && normalizedEntry.creditedHours !== null) {
+        valueField.value = formatHoursForNumberInput(normalizedEntry.creditedHours);
+    } else {
+        valueField.value = "";
+    }
+
+    timeInField.value = normalizedEntry ? normalizedEntry.timeIn : "";
+    timeOutField.value = normalizedEntry ? normalizedEntry.timeOut : "";
+    deductHoursField.value = normalizedEntry ? `${normalizedEntry.deductHours}` : "0";
+    deductMinutesField.value = normalizedEntry ? `${normalizedEntry.deductMinutes}` : "0";
+
+    if (typeof dayHoursModal.showModal === "function") {
+        dayHoursModal.showModal();
+        valueField.focus();
+    }
+}
+
+function saveDayHoursEntry() {
+    const dateField = document.getElementById("dayHoursDate");
+    const valueField = document.getElementById("dayHoursValue");
+    const timeInField = document.getElementById("dayTimeIn");
+    const timeOutField = document.getElementById("dayTimeOut");
+    const deductHoursField = document.getElementById("dayDeductHours");
+    const deductMinutesField = document.getElementById("dayDeductMinutes");
+
+    if (!dateField || !valueField || !timeInField || !timeOutField || !deductHoursField || !deductMinutesField
+        || !/^\d{4}-\d{2}-\d{2}$/.test(dateField.value)) {
+        return;
+    }
+
+    const rawCreditedValue = valueField.value.trim();
+    const rawTimeIn = timeInField.value.trim();
+    const rawTimeOut = timeOutField.value.trim();
+    const rawDeductHours = deductHoursField.value.trim();
+    const rawDeductMinutes = deductMinutesField.value.trim();
+    const normalizedTimeIn = normalizeTimeValue(rawTimeIn);
+    const normalizedTimeOut = normalizeTimeValue(rawTimeOut);
+    const parsedDeductHours = normalizeWholeNumber(rawDeductHours, 0, 23, 0);
+    const parsedDeductMinutes = normalizeWholeNumber(rawDeductMinutes, 0, 59, 0);
+
+    if (rawTimeIn && !normalizedTimeIn) {
+        window.alert("Please enter a valid Time In value.");
+        return;
+    }
+
+    if (rawTimeOut && !normalizedTimeOut) {
+        window.alert("Please enter a valid Time Out value.");
+        return;
+    }
+
+    const hasAnyValue = Boolean(rawCreditedValue || normalizedTimeIn || normalizedTimeOut || parsedDeductHours > 0 || parsedDeductMinutes > 0);
+    if (!hasAnyValue) {
+        manualHourOverrides.delete(dateField.value);
+        saveDayHoursToStorage();
+        closeDayHoursDialog();
+        updateAll();
+        return;
+    }
+
+    let creditedHours = null;
+    if (rawCreditedValue) {
+        creditedHours = normalizeHours(rawCreditedValue);
+    }
+
+    if (rawCreditedValue && creditedHours === null) {
+        window.alert("Please enter a valid number of hours.");
+        return;
+    }
+
+    if ((normalizedTimeIn && !normalizedTimeOut) || (!normalizedTimeIn && normalizedTimeOut)) {
+        window.alert("Please provide both Time In and Time Out.");
+        return;
+    }
+
+    const timeInMinutes = normalizedTimeIn ? parseTimeToMinutes(normalizedTimeIn) : null;
+    const timeOutMinutes = normalizedTimeOut ? parseTimeToMinutes(normalizedTimeOut) : null;
+    if (normalizedTimeIn && normalizedTimeOut && (timeInMinutes === null || timeOutMinutes === null || timeOutMinutes <= timeInMinutes)) {
+        window.alert("Time Out must be later than Time In.");
+        return;
+    }
+
+    const deductHours = parsedDeductHours;
+    const deductMinutes = parsedDeductMinutes;
+
+    const normalizedEntry = normalizeDayHoursEntry({
+        creditedHours,
+        timeIn: normalizedTimeIn,
+        timeOut: normalizedTimeOut,
+        deductHours,
+        deductMinutes
+    });
+
+    if (!normalizedEntry) {
+        manualHourOverrides.delete(dateField.value);
+    } else {
+        manualHourOverrides.set(dateField.value, normalizedEntry);
+    }
+
+    saveDayHoursToStorage();
+    closeDayHoursDialog();
+    updateAll();
+}
+
 function saveEvent() {
     const name = document.getElementById("evName").value.trim();
     const start = document.getElementById("evStart").value;
@@ -599,16 +1086,18 @@ function calculateDate() {
     }
 
     const hoursMap = {
-        0: Math.min(12, Number.parseInt(document.getElementById("h0").value, 10) || 0),
-        1: Math.min(12, Number.parseInt(document.getElementById("h1").value, 10) || 0),
-        2: Math.min(12, Number.parseInt(document.getElementById("h2").value, 10) || 0),
-        3: Math.min(12, Number.parseInt(document.getElementById("h3").value, 10) || 0),
-        4: Math.min(12, Number.parseInt(document.getElementById("h4").value, 10) || 0),
-        5: Math.min(12, Number.parseInt(document.getElementById("h5").value, 10) || 0),
-        6: Math.min(12, Number.parseInt(document.getElementById("h6").value, 10) || 0)
+        0: getConfiguredHoursForDay(0),
+        1: getConfiguredHoursForDay(1),
+        2: getConfiguredHoursForDay(2),
+        3: getConfiguredHoursForDay(3),
+        4: getConfiguredHoursForDay(4),
+        5: getConfiguredHoursForDay(5),
+        6: getConfiguredHoursForDay(6)
     };
 
-    if (Object.values(hoursMap).every((hours) => hours === 0)) {
+    const hasManualCreditedHours = Array.from(manualHourOverrides.entries())
+        .some(([dateStr, entry]) => buildManualEntrySummary(dateStr, entry).effectiveHours > 0);
+    if (Object.values(hoursMap).every((hours) => hours === 0) && !hasManualCreditedHours) {
         document.getElementById("finalDateText").innerHTML = "No working days selected.";
         return;
     }
@@ -623,11 +1112,16 @@ function calculateDate() {
     while (accumulated < targetHours && iterations < 1500) {
         const dateStr = `${currentDate.getFullYear()}-${pad(currentDate.getMonth() + 1)}-${pad(currentDate.getDate())}`;
         const dayOfWeek = currentDate.getDay();
-        const dailyHours = hoursMap[dayOfWeek];
+        const configuredHours = hoursMap[dayOfWeek];
+        const manualSummary = buildManualEntrySummary(dateStr, manualHourOverrides.get(dateStr));
+        const hasManualOverride = manualSummary.hasOverride;
+        const manualHours = hasManualOverride ? manualSummary.effectiveHours : 0;
 
         const holidayName = getEventForDate(dateStr);
+        const dailyHours = hasManualOverride ? manualHours : configuredHours;
+        const shouldRenderHoliday = Boolean(holidayName && (!hasManualOverride || dailyHours === 0));
 
-        if (holidayName) {
+        if (shouldRenderHoliday) {
             ojtData.set(dateStr, { type: "holiday", name: holidayName });
         } else if (dailyHours > 0) {
             let hoursLogged = dailyHours;
@@ -637,12 +1131,31 @@ function calculateDate() {
                 accumulated = targetHours;
                 runningTotal = accumulated;
                 finalEndDateStr = dateStr;
-                ojtData.set(dateStr, { type: "work", hours: hoursLogged, total: runningTotal, isEnd: true });
+                ojtData.set(dateStr, {
+                    type: "work",
+                    hours: hoursLogged,
+                    total: runningTotal,
+                    isEnd: true,
+                    isManual: hasManualOverride,
+                    displayHours: hasManualOverride && manualSummary.displayHours !== null
+                        ? manualSummary.displayHours
+                        : hoursLogged,
+                    tooltip: hasManualOverride ? manualSummary.tooltip : ""
+                });
                 break;
             }
 
             accumulated += dailyHours;
-            ojtData.set(dateStr, { type: "work", hours: hoursLogged, total: runningTotal });
+            ojtData.set(dateStr, {
+                type: "work",
+                hours: hoursLogged,
+                total: runningTotal,
+                isManual: hasManualOverride,
+                displayHours: hasManualOverride && manualSummary.displayHours !== null
+                    ? manualSummary.displayHours
+                    : hoursLogged,
+                tooltip: hasManualOverride ? manualSummary.tooltip : ""
+            });
         }
 
         currentDate.setDate(currentDate.getDate() + 1);
@@ -758,6 +1271,12 @@ function renderCalendar() {
 
         const data = ojtData.get(dateStr);
         let cellClass = `cal-cell${isFaded ? " faded" : ""}`;
+        if (!isFaded) {
+            cellClass += " clickable";
+        }
+
+        let cellTooltip = "";
+
         let badgesHTML = "";
 
         if (dateStr === startDateVal) {
@@ -767,9 +1286,15 @@ function renderCalendar() {
         if (data) {
             if (data.type === "work") {
                 if (!isFaded) {
-                    cellClass += " work-day";
+                    cellClass += data.isManual ? " credited-day" : " work-day";
                 }
-                badgesHTML += `<div class="badge hours">${data.total} hrs</div>`;
+                const hoursBadgeClass = data.isManual ? "badge hours credited" : "badge hours";
+                const perDayHours = data.displayHours ?? data.hours;
+                const displayedHours = showPerDayHoursCard() ? perDayHours : data.total;
+                if (data.tooltip) {
+                    cellTooltip = data.tooltip;
+                }
+                badgesHTML += `<div class="${hoursBadgeClass}">${formatHours(displayedHours)}</div>`;
                 if (data.isEnd) {
                     badgesHTML += '<div class="badge end">End</div>';
                 }
@@ -781,8 +1306,10 @@ function renderCalendar() {
             }
         }
 
+        const cellTooltipAttr = cellTooltip ? ` title="${escapeAttribute(cellTooltip)}"` : "";
+
         return `
-      <div class="${cellClass}">
+                        <div class="${cellClass}"${isFaded ? "" : ` data-date="${dateStr}" role="button" tabindex="0" aria-label="Set credited hours for ${dateStr}"`}${cellTooltipAttr}>
         <div class="date-num">${dateObj.getDate()}</div>
         ${badgesHTML}
       </div>
@@ -817,6 +1344,29 @@ function renderCalendar() {
             grid.innerHTML += generateCell(dayDate, isFaded);
         }
     }
+
+    attachCalendarDayEditors();
+}
+
+function attachCalendarDayEditors() {
+    const editableCells = document.querySelectorAll(".cal-cell[data-date]");
+    editableCells.forEach((cell) => {
+        const dateStr = cell.dataset.date;
+        if (!dateStr) {
+            return;
+        }
+
+        cell.addEventListener("click", () => {
+            openDayHoursDialog(dateStr);
+        });
+
+        cell.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openDayHoursDialog(dateStr);
+            }
+        });
+    });
 }
 
 function updateAll() {
@@ -890,14 +1440,212 @@ function initializeSettingsDrawer() {
     });
 }
 
+function getLayoutSplitterSize(layoutElement) {
+    if (!layoutElement) {
+        return 12;
+    }
+
+    const raw = getComputedStyle(layoutElement).getPropertyValue("--layout-splitter-size");
+    const parsed = Number.parseFloat(raw);
+    return Number.isFinite(parsed) ? parsed : 12;
+}
+
+function getCalendarPaneWidthBounds(layoutElement) {
+    const layoutWidth = layoutElement.getBoundingClientRect().width;
+    const splitterSize = getLayoutSplitterSize(layoutElement);
+    const maxCalendarWidth = Math.max(280, layoutWidth - MIN_RIGHT_PANE_WIDTH - splitterSize);
+    const minCalendarWidth = Math.min(MIN_CALENDAR_PANE_WIDTH, maxCalendarWidth);
+
+    return {
+        layoutWidth,
+        minCalendarWidth,
+        maxCalendarWidth,
+        splitterSize
+    };
+}
+
+function applyCalendarPaneWidth(layoutElement, widthPx, persist = true) {
+    if (!layoutElement || !Number.isFinite(widthPx)) {
+        return null;
+    }
+
+    const bounds = getCalendarPaneWidthBounds(layoutElement);
+    if (!Number.isFinite(bounds.minCalendarWidth) || !Number.isFinite(bounds.maxCalendarWidth)) {
+        return null;
+    }
+
+    const clampedWidth = clamp(widthPx, bounds.minCalendarWidth, bounds.maxCalendarWidth);
+    layoutElement.style.setProperty("--calendar-pane-width", `${Math.round(clampedWidth)}px`);
+
+    if (persist) {
+        setStoredValue(STORAGE_KEYS.calendarPaneWidth, `${Math.round(clampedWidth)}`);
+    }
+
+    return clampedWidth;
+}
+
+function initializeLayoutSplitter() {
+    const layoutElement = document.querySelector(".layout");
+    const splitter = document.getElementById("layoutSplitter");
+    const calendarPane = document.querySelector(".calendar-pane");
+
+    if (!layoutElement || !splitter || !calendarPane) {
+        return;
+    }
+
+    let isDragging = false;
+    let activePointerId = null;
+
+    const isEnabled = () => window.innerWidth >= LAYOUT_SPLITTER_MIN_VIEWPORT;
+
+    const updateAriaValues = () => {
+        const bounds = getCalendarPaneWidthBounds(layoutElement);
+        const currentWidth = calendarPane.getBoundingClientRect().width;
+        const boundedCurrent = clamp(currentWidth, bounds.minCalendarWidth, bounds.maxCalendarWidth);
+
+        splitter.setAttribute("aria-valuemin", `${Math.round(bounds.minCalendarWidth)}`);
+        splitter.setAttribute("aria-valuemax", `${Math.round(bounds.maxCalendarWidth)}`);
+        splitter.setAttribute("aria-valuenow", `${Math.round(boundedCurrent)}`);
+    };
+
+    const moveSplitter = (clientX, persist = false) => {
+        const layoutRect = layoutElement.getBoundingClientRect();
+        const splitterSize = getLayoutSplitterSize(layoutElement);
+        const targetWidth = clientX - layoutRect.left - splitterSize / 2;
+        const appliedWidth = applyCalendarPaneWidth(layoutElement, targetWidth, persist);
+        if (appliedWidth !== null) {
+            updateAriaValues();
+        }
+    };
+
+    const stopDragging = () => {
+        if (!isDragging) {
+            return;
+        }
+
+        isDragging = false;
+        activePointerId = null;
+        document.body.classList.remove("is-resizing-layout");
+
+        if (isEnabled()) {
+            const currentWidth = calendarPane.getBoundingClientRect().width;
+            applyCalendarPaneWidth(layoutElement, currentWidth, true);
+        }
+
+        updateAriaValues();
+    };
+
+    splitter.addEventListener("pointerdown", (event) => {
+        if (!isEnabled()) {
+            return;
+        }
+
+        isDragging = true;
+        activePointerId = event.pointerId;
+        splitter.setPointerCapture(event.pointerId);
+        document.body.classList.add("is-resizing-layout");
+        moveSplitter(event.clientX, false);
+        event.preventDefault();
+    });
+
+    splitter.addEventListener("pointermove", (event) => {
+        if (!isDragging || event.pointerId !== activePointerId) {
+            return;
+        }
+
+        moveSplitter(event.clientX, false);
+    });
+
+    splitter.addEventListener("pointerup", (event) => {
+        if (event.pointerId !== activePointerId) {
+            return;
+        }
+
+        if (splitter.hasPointerCapture(event.pointerId)) {
+            splitter.releasePointerCapture(event.pointerId);
+        }
+
+        stopDragging();
+    });
+
+    splitter.addEventListener("pointercancel", (event) => {
+        if (event.pointerId !== activePointerId) {
+            return;
+        }
+
+        if (splitter.hasPointerCapture(event.pointerId)) {
+            splitter.releasePointerCapture(event.pointerId);
+        }
+
+        stopDragging();
+    });
+
+    splitter.addEventListener("lostpointercapture", () => {
+        stopDragging();
+    });
+
+    splitter.addEventListener("keydown", (event) => {
+        if (!isEnabled()) {
+            return;
+        }
+
+        const bounds = getCalendarPaneWidthBounds(layoutElement);
+        const currentWidth = calendarPane.getBoundingClientRect().width;
+
+        let targetWidth = null;
+        if (event.key === "ArrowLeft") {
+            targetWidth = currentWidth - LAYOUT_SPLITTER_STEP;
+        } else if (event.key === "ArrowRight") {
+            targetWidth = currentWidth + LAYOUT_SPLITTER_STEP;
+        } else if (event.key === "Home") {
+            targetWidth = bounds.minCalendarWidth;
+        } else if (event.key === "End") {
+            targetWidth = bounds.maxCalendarWidth;
+        }
+
+        if (targetWidth === null) {
+            return;
+        }
+
+        event.preventDefault();
+        applyCalendarPaneWidth(layoutElement, targetWidth, true);
+        updateAriaValues();
+    });
+
+    const restoreInitialWidth = () => {
+        const bounds = getCalendarPaneWidthBounds(layoutElement);
+        const savedWidth = Number.parseFloat(getStoredValue(STORAGE_KEYS.calendarPaneWidth) || "");
+        const preferredWidth = Number.isFinite(savedWidth)
+            ? savedWidth
+            : bounds.layoutWidth * DEFAULT_CALENDAR_WIDTH_RATIO;
+
+        applyCalendarPaneWidth(layoutElement, preferredWidth, false);
+        updateAriaValues();
+    };
+
+    restoreInitialWidth();
+
+    window.addEventListener("resize", () => {
+        if (!isEnabled()) {
+            return;
+        }
+
+        const currentWidth = calendarPane.getBoundingClientRect().width;
+        applyCalendarPaneWidth(layoutElement, currentWidth, false);
+        updateAriaValues();
+    });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     const shouldAutoSyncOnLoad = getStoredValue(STORAGE_KEYS.settings) === null
         && getStoredValue(STORAGE_KEYS.events) === null;
 
     restoreSettingsFromStorage();
     initializeEvents();
+    initializeDayHours();
     initializeDisplaySettings();
     initializeSettingsDrawer();
+    initializeLayoutSplitter();
     updateAll();
 
     const inputs = document.querySelectorAll(".controls-pane input");

@@ -12,6 +12,16 @@
     <header class="topbar">
         <h1 class="app-title">OJT Tracker</h1>
         <div class="topbar-controls" aria-label="Display settings">
+            <a class="github-btn" href="https://github.com/Jed556/OJT-Tracker" target="_blank" rel="noopener noreferrer"
+                aria-label="Open GitHub repository" title="Open GitHub repository">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                        d="M12 1.5C6.2 1.5 1.5 6.2 1.5 12c0 4.6 3 8.5 7.1 9.9.5.1.7-.2.7-.5v-1.9c-2.9.6-3.5-1.2-3.5-1.2-.4-1-.9-1.3-.9-1.3-.8-.5.1-.5.1-.5.9.1 1.4 1 1.4 1 .8 1.4 2.2 1 2.7.7.1-.6.3-1 .6-1.3-2.3-.3-4.7-1.2-4.7-5.3 0-1.2.4-2.1 1-2.9-.1-.3-.5-1.4.1-2.9 0 0 .9-.3 2.9 1.1.8-.2 1.8-.4 2.7-.4.9 0 1.9.1 2.7.4 2-1.4 2.9-1.1 2.9-1.1.6 1.5.2 2.6.1 2.9.7.8 1 1.7 1 2.9 0 4.1-2.5 5-4.8 5.3.4.3.7.9.7 1.9v2.8c0 .3.2.6.7.5 4.1-1.4 7.1-5.3 7.1-9.9 0-5.8-4.7-10.5-10.5-10.5z">
+                    </path>
+                </svg>
+                <span>GitHub</span>
+            </a>
+
             <button id="themeToggleBtn" class="theme-icon-btn" type="button" aria-label="Toggle dark mode"
                 aria-pressed="true" title="Toggle light/dark mode">
                 <svg class="theme-icon sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -94,6 +104,9 @@
             <div class="cal-grid" id="calGrid"></div>
         </div>
 
+        <div id="layoutSplitter" class="layout-splitter" role="separator" aria-orientation="vertical"
+            aria-label="Resize calendar panel" tabindex="0"></div>
+
         <div class="panel controls-pane" id="settingsPane">
             <div class="controls-header">
                 <h2>OJT Settings</h2>
@@ -123,10 +136,38 @@
             </div>
 
             <div class="setting-toggle-row">
-                <span>Use Local Holiday Names</span>
-                <label class="switch" for="holidayNameLocalToggle">
+                <span>Holiday Names</span>
+                <label class="toggleSwitch nolabel" for="holidayNameLocalToggle">
                     <input type="checkbox" id="holidayNameLocalToggle">
-                    <span class="slider"></span>
+                    <a aria-hidden="true"></a>
+                    <span>
+                        <span class="left-span">English</span>
+                        <span class="right-span">Local</span>
+                    </span>
+                </label>
+            </div>
+
+            <div class="setting-toggle-row">
+                <span>Hours Card</span>
+                <label class="toggleSwitch nolabel" for="hoursCardPerDayToggle">
+                    <input type="checkbox" id="hoursCardPerDayToggle">
+                    <a aria-hidden="true"></a>
+                    <span>
+                        <span class="left-span">Total</span>
+                        <span class="right-span">Per Day</span>
+                    </span>
+                </label>
+            </div>
+
+            <div class="setting-toggle-row">
+                <span>Compute Source</span>
+                <label class="toggleSwitch nolabel" for="followTimeInOutToggle">
+                    <input type="checkbox" id="followTimeInOutToggle" checked>
+                    <a aria-hidden="true"></a>
+                    <span>
+                        <span class="left-span">Credited</span>
+                        <span class="right-span">Time In/Out</span>
+                    </span>
                 </label>
             </div>
 
@@ -209,6 +250,52 @@
         <div class="dialog-actions">
             <button class="btn-cancel" type="button" onclick="closeResetAppDialog()">Cancel</button>
             <button class="btn-save btn-danger" type="button" onclick="confirmResetAppData()">Reset App</button>
+        </div>
+    </dialog>
+
+    <dialog id="dayHoursModal">
+        <h3>Daily Time Entry</h3>
+        <p id="dayHoursDateLabel" class="dialog-text">Select a date.</p>
+
+        <div class="entry-section-divider" role="presentation">
+            <span>Credited Hours Mode</span>
+        </div>
+
+        <label for="dayHoursValue">Hours Credited</label>
+        <input type="number" id="dayHoursValue" min="0" max="24" step="0.5" placeholder="e.g. 8">
+
+        <div class="entry-section-divider" role="presentation">
+            <span>Time In/Out Mode</span>
+        </div>
+
+        <div class="time-row-grid">
+            <div>
+                <label for="dayTimeIn">Time In</label>
+                <input type="time" id="dayTimeIn">
+            </div>
+            <div>
+                <label for="dayTimeOut">Time Out</label>
+                <input type="time" id="dayTimeOut">
+            </div>
+        </div>
+
+        <div class="time-row-grid">
+            <div>
+                <label for="dayDeductHours">Deduct (Hours)</label>
+                <input type="number" id="dayDeductHours" min="0" max="23" step="1" value="0">
+            </div>
+            <div>
+                <label for="dayDeductMinutes">Deduct (Minutes)</label>
+                <input type="number" id="dayDeductMinutes" min="0" max="59" step="1" value="0">
+            </div>
+        </div>
+
+        <input type="hidden" id="dayHoursDate">
+        <p id="dayHoursDefaultHint" class="dialog-text"></p>
+
+        <div class="dialog-actions">
+            <button class="btn-cancel" type="button" onclick="closeDayHoursDialog()">Cancel</button>
+            <button class="btn-save" type="button" onclick="saveDayHoursEntry()">Confirm</button>
         </div>
     </dialog>
 

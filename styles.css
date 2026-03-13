@@ -2,9 +2,10 @@
     --bg-main: #121212;
     --bg-card: #1e1e1e;
     --bg-input: #2d2d2d;
-    --accent: #61dafb;
+    --accent: #00b3ff;
     --accent-hover: #4fa8c7;
     --accent-soft: rgba(97, 218, 251, 0.15);
+    --credited: #4caf50;
     --danger: #ff5555;
     --holiday: #f39c12;
     --text-main: #e0e0e0;
@@ -13,6 +14,12 @@
     --text-inverse: #000000;
     --text-strong: #ffffff;
     --border: #333333;
+    --layout-splitter-size: 12px;
+    --splitter-line-idle: rgba(224, 224, 224, 0.45);
+    --splitter-line-active: rgba(224, 224, 224, 0.95);
+    --calendar-scrollbar-track: #1a1a1a;
+    --calendar-scrollbar-thumb: #5b6168;
+    --calendar-scrollbar-thumb-hover: #77808a;
     --theme-transition-duration: 240ms;
     --theme-transition-easing: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
@@ -21,9 +28,10 @@
     --bg-main: #f3f5f7;
     --bg-card: #ffffff;
     --bg-input: #f8fafc;
-    --accent: #0078d4;
+    --accent: #00b3ff;
     --accent-hover: #005fa8;
     --accent-soft: rgba(0, 120, 212, 0.12);
+    --credited: #2e8b57;
     --danger: #c73737;
     --holiday: #d88900;
     --text-main: #1b1b1b;
@@ -32,18 +40,33 @@
     --text-inverse: #ffffff;
     --text-strong: #111111;
     --border: #d5d9de;
+    --splitter-line-idle: rgba(17, 17, 17, 0.38);
+    --splitter-line-active: rgba(17, 17, 17, 0.9);
+    --calendar-scrollbar-track: #e3e8ef;
+    --calendar-scrollbar-thumb: #9aa6b4;
+    --calendar-scrollbar-thumb-hover: #7e8a98;
 }
 
 * {
     box-sizing: border-box;
 }
 
+.ui-theme-transition,
 .ui-theme-transition *,
 .ui-theme-transition *::before,
 .ui-theme-transition *::after {
-    transition-property: background-color, color, border-color, box-shadow, fill, stroke;
+    transition-property: background, background-color, color, border, border-color, box-shadow, fill, stroke, outline-color, scrollbar-color;
     transition-duration: var(--theme-transition-duration) !important;
     transition-timing-function: var(--theme-transition-easing) !important;
+    transition-delay: 0ms !important;
+}
+
+.ui-theme-transition .calendar-pane::-webkit-scrollbar-track,
+.ui-theme-transition .calendar-pane::-webkit-scrollbar-thumb {
+    transition-property: background-color, border-color !important;
+    transition-duration: var(--theme-transition-duration) !important;
+    transition-timing-function: var(--theme-transition-easing) !important;
+    transition-delay: 0ms !important;
 }
 
 body {
@@ -52,6 +75,7 @@ body {
     padding: 0px 14px 14px 14px;
     background: var(--bg-main);
     color: var(--text-main);
+    overflow-x: hidden;
 }
 
 .sr-only {
@@ -91,6 +115,31 @@ h3 {
     display: flex;
     align-items: center;
     gap: 10px;
+}
+
+.github-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: var(--bg-card);
+    color: var(--text-main);
+    text-decoration: none;
+    font-size: 0.88rem;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.github-btn:hover {
+    background: var(--bg-input);
+}
+
+.github-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 
 .app-title,
@@ -182,14 +231,16 @@ h3 {
 
 .layout {
     display: grid;
-    grid-template-columns: minmax(0, 2.1fr) minmax(350px, 1fr);
+    grid-template-columns: minmax(420px, var(--calendar-pane-width, 50%)) var(--layout-splitter-size) minmax(360px, 1fr);
     grid-template-areas:
-        "calendar controls"
-        "calendar holidays";
-    gap: 16px;
+        "calendar splitter controls"
+        "calendar splitter holidays";
+    row-gap: 16px;
+    column-gap: 8px;
     width: 100%;
     margin: 0;
     align-items: start;
+    min-width: 0;
 }
 
 .panel {
@@ -202,6 +253,66 @@ h3 {
 .calendar-pane {
     grid-area: calendar;
     min-width: 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--calendar-scrollbar-thumb) var(--calendar-scrollbar-track);
+}
+
+.calendar-pane::-webkit-scrollbar {
+    width: 10px;
+}
+
+.calendar-pane::-webkit-scrollbar-track {
+    background: var(--calendar-scrollbar-track);
+    border-radius: 999px;
+}
+
+.calendar-pane::-webkit-scrollbar-thumb {
+    background: var(--calendar-scrollbar-thumb);
+    border-radius: 999px;
+    border: 2px solid var(--calendar-scrollbar-track);
+}
+
+.calendar-pane::-webkit-scrollbar-thumb:hover {
+    background: var(--calendar-scrollbar-thumb-hover);
+}
+
+.layout-splitter {
+    grid-area: splitter;
+    width: var(--layout-splitter-size);
+    min-width: var(--layout-splitter-size);
+    align-self: stretch;
+    justify-self: center;
+    position: relative;
+    border: none;
+    background: transparent;
+    cursor: col-resize;
+}
+
+.layout-splitter::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2px;
+    height: 88px;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+    background: var(--splitter-line-idle);
+    transition: background-color var(--theme-transition-duration) var(--theme-transition-easing);
+}
+
+.layout-splitter:focus-visible {
+    outline: none;
+}
+
+body.is-resizing-layout .layout-splitter::before {
+    background: var(--splitter-line-active);
+}
+
+body.is-resizing-layout,
+body.is-resizing-layout * {
+    cursor: col-resize !important;
+    user-select: none !important;
 }
 
 .cal-header {
@@ -276,6 +387,15 @@ h3 {
     overflow: hidden;
 }
 
+.cal-cell.clickable {
+    cursor: pointer;
+}
+
+.cal-cell.clickable .date-num,
+.cal-cell.clickable .badge {
+    pointer-events: none;
+}
+
 .week-cell {
     display: flex;
     flex-direction: row;
@@ -339,6 +459,11 @@ h3 {
     border-color: var(--accent);
 }
 
+.cal-cell.credited-day {
+    border-color: var(--credited);
+    background: rgba(76, 175, 80, 0.16);
+}
+
 .cal-cell.holiday-day {
     border-color: var(--holiday);
     background: rgba(243, 156, 18, 0.12);
@@ -365,6 +490,11 @@ h3 {
     font-weight: bold;
 }
 
+.badge.hours.credited {
+    background: var(--credited);
+    color: #ffffff;
+}
+
 .badge.holiday {
     background: var(--holiday);
     color: var(--text-inverse);
@@ -382,7 +512,7 @@ h3 {
 
 .controls-pane {
     grid-area: controls;
-    min-width: 320px;
+    min-width: 0;
 }
 
 .controls-header {
@@ -420,6 +550,7 @@ label {
 
 input[type="number"],
 input[type="date"],
+input[type="time"],
 input[type="search"],
 input[type="text"] {
     width: 100%;
@@ -438,7 +569,16 @@ input[type="date"] {
     cursor: pointer;
 }
 
+input[type="time"] {
+    color-scheme: dark;
+    cursor: pointer;
+}
+
 :root[data-theme="light"] input[type="date"] {
+    color-scheme: light;
+}
+
+:root[data-theme="light"] input[type="time"] {
     color-scheme: light;
 }
 
@@ -478,7 +618,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
     gap: 12px;
 }
 
-.setting-toggle-row span {
+.setting-toggle-row>span {
     font-size: 0.9rem;
     color: var(--text-muted);
 }
@@ -486,6 +626,121 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 .setting-toggle-row label {
     margin-top: 0;
 }
+
+/* Toggle Switch */
+.toggleSwitch {
+    display: inline-block;
+    position: relative;
+    overflow: visible;
+    padding: 0;
+    cursor: pointer;
+    width: 200px;
+    min-width: 200px;
+    background-color: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    height: 34px;
+}
+
+.toggleSwitch * {
+    box-sizing: border-box;
+}
+
+.toggleSwitch input {
+    position: absolute;
+    opacity: 0;
+    z-index: 5;
+}
+
+.toggleSwitch input:focus~a,
+.toggleSwitch input:focus+label {
+    outline: none;
+}
+
+.toggleSwitch>a {
+    position: absolute;
+    right: 50%;
+    z-index: 4;
+    display: block;
+    top: 3px;
+    bottom: 3px;
+    padding: 0;
+    left: 3px;
+    width: 50%;
+    background-color: var(--accent);
+    border-radius: 4px;
+    transition: all 0.2s ease-out;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.toggleSwitch>span {
+    position: absolute;
+    left: 0;
+    width: calc(100% - 6px);
+    margin: 0 3px;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.toggleSwitch>span:before {
+    content: "";
+    display: block;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    left: 0;
+    top: -2px;
+    border-radius: 30px;
+    transition: all 0.2s ease-out;
+}
+
+.toggleSwitch>span span {
+    position: absolute;
+    top: -1px;
+    z-index: 5;
+    display: block;
+    margin: 0;
+    opacity: 1;
+    width: 50%;
+    text-align: center;
+    line-height: 34px;
+    font-size: 0.88rem;
+}
+
+.toggleSwitch>span span:first-of-type {
+    left: 0;
+    color: var(--text-main);
+    /* default inactive */
+}
+
+.toggleSwitch>span span:last-of-type {
+    right: 0;
+    color: var(--text-main);
+    /* default inactive */
+}
+
+.toggleSwitch input:checked~a {
+    left: calc(50% - 3px);
+}
+
+/* color rules based on checked state */
+.toggleSwitch input:not(:checked)~span span:first-of-type {
+    color: var(--text-inverse);
+}
+
+.toggleSwitch input:not(:checked)~span span:last-of-type {
+    color: var(--text-main);
+}
+
+.toggleSwitch input:checked~span span:first-of-type {
+    color: var(--text-main);
+}
+
+.toggleSwitch input:checked~span span:last-of-type {
+    color: var(--text-inverse);
+}
+
+/* End Toggle Switch */
 
 #result {
     margin-top: 20px;
@@ -507,6 +762,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 .holidays-pane {
     grid-area: holidays;
     width: auto;
+    min-width: 0;
     margin-top: 0;
 }
 
@@ -794,10 +1050,51 @@ dialog::backdrop {
     margin-top: 20px;
 }
 
+.entry-section-divider {
+    margin: 30px 0px 0px -8px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+}
+
+.entry-section-divider span {
+    display: inline-block;
+    padding: 0 8px;
+    margin-top: -9px;
+    margin-left: 0;
+    background: var(--bg-card);
+    color: var(--accent);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.time-row-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.time-row-grid label {
+    margin-top: 8px;
+}
+
 .dialog-text {
     margin: 8px 0 0;
     font-size: 0.92rem;
     color: var(--text-muted);
+}
+
+.dialog-text.mode-scope-note {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    background: var(--bg-input);
+    font-size: 0.85rem;
+    line-height: 1.35;
 }
 
 .btn-cancel {
@@ -865,19 +1162,26 @@ dialog::backdrop {
             "calendar controls"
             "holidays holidays";
     }
+
+    .layout-splitter {
+        display: none;
+    }
 }
 
 @media (min-width: 1280px) {
-    .layout {
-        grid-template-columns: minmax(430px, 1fr) minmax(740px, 1.65fr);
-    }
-
     .calendar-pane {
         position: sticky;
         top: 78px;
         align-self: start;
         max-height: calc(100vh - 92px);
         overflow-y: auto;
+    }
+
+    .layout-splitter {
+        position: sticky;
+        top: 78px;
+        align-self: start;
+        height: calc(100vh - 92px);
     }
 
     .cards-grid {
@@ -906,6 +1210,10 @@ dialog::backdrop {
             "calendar"
             "holidays";
         gap: 14px;
+    }
+
+    .layout-splitter {
+        display: none;
     }
 
     .topbar {
