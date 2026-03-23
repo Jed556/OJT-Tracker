@@ -1107,8 +1107,6 @@ function calculateDate() {
     let accumulated = 0;
     let iterations = 0;
 
-    currentCalDate = new Date(y, m - 1, 1);
-
     while (accumulated < targetHours && iterations < 1500) {
         const dateStr = `${currentDate.getFullYear()}-${pad(currentDate.getMonth() + 1)}-${pad(currentDate.getDate())}`;
         const dayOfWeek = currentDate.getDay();
@@ -1641,6 +1639,13 @@ document.addEventListener("DOMContentLoaded", () => {
         && getStoredValue(STORAGE_KEYS.events) === null;
 
     restoreSettingsFromStorage();
+
+    const initialStartDate = document.getElementById("startDate").value;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(initialStartDate)) {
+        const [year, month] = initialStartDate.split("-").map(Number);
+        currentCalDate = new Date(year, month - 1, 1);
+    }
+
     initializeEvents();
     initializeDayHours();
     initializeDisplaySettings();
