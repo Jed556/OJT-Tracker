@@ -16,6 +16,7 @@ const STORAGE_KEYS = {
 };
 
 const DEFAULT_PRIMARY_COLOR = "#00b3ff";
+const DEFAULT_WORKDAY_START_MINUTES = 8 * 60;
 const MAX_DAILY_HOURS = 24;
 const DEFAULT_CALENDAR_WIDTH_RATIO = 0.50;
 const MIN_CALENDAR_PANE_WIDTH = 420;
@@ -415,6 +416,51 @@ function formatMinutesAsHoursAndMinutes(totalMinutes) {
 
 function roundMinutesToHours(totalMinutes) {
     return Math.round((Math.max(0, totalMinutes) / 60) * 100) / 100;
+}
+
+function formatEndDateLabel(dateStr, minutesOfDay) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        return "";
+    }
+
+    const [year, month, day] = dateStr.split("-").map(Number);
+    const dateObj = new Date(year, month - 1, day);
+    const weekday = dateObj.toLocaleDateString("en-US", { weekday: "short" });
+    const monthName = dateObj.toLocaleDateString("en-US", { month: "short" });
+
+    const safeMinutes = clamp(Math.round(minutesOfDay), 0, (24 * 60) - 1);
+    const hour24 = Math.floor(safeMinutes / 60);
+    const minute = safeMinutes % 60;
+    const meridiem = hour24 >= 12 ? "PM" : "AM";
+    const hour12 = hour24 % 12 || 12;
+
+    return `${weekday}, ${monthName} ${day}, ${year} at ${hour12}:${pad(minute)}${meridiem}`;
+}
+
+function getProjectedEndMinutes(hoursConsumedOnFinalDay, manualSummary) {
+    const neededMinutes = Math.max(0, Math.round(hoursConsumedOnFinalDay * 60));
+    const normalizedEntry = manualSummary && manualSummary.normalizedEntry ? manualSummary.normalizedEntry : null;
+
+    if (normalizedEntry && normalizedEntry.timeIn) {
+        const timeInMinutes = parseTimeToMinutes(normalizedEntry.timeIn);
+        if (timeInMinutes !== null) {
+            const hasBothTimes = Boolean(normalizedEntry.timeOut);
+            if (hasBothTimes) {
+                const timeOutMinutes = parseTimeToMinutes(normalizedEntry.timeOut);
+                if (
+                    timeOutMinutes !== null
+                    && timeOutMinutes > timeInMinutes
+                    && Math.abs((manualSummary?.effectiveHours || 0) - hoursConsumedOnFinalDay) < 0.0001
+                ) {
+                    return timeOutMinutes;
+                }
+            }
+
+            return timeInMinutes + neededMinutes;
+        }
+    }
+
+    return DEFAULT_WORKDAY_START_MINUTES + neededMinutes;
 }
 
 function normalizeDayHoursEntry(rawEntry) {
@@ -1076,6 +1122,7 @@ function renderCards() {
 function calculateDate() {
     ojtData.clear();
     finalEndDateStr = null;
+    let finalEndMinutes = null;
 
     const targetHours = Number.parseInt(document.getElementById("targetHours").value, 10);
     const startDateVal = document.getElementById("startDate").value;
@@ -1129,6 +1176,7 @@ function calculateDate() {
                 accumulated = targetHours;
                 runningTotal = accumulated;
                 finalEndDateStr = dateStr;
+                finalEndMinutes = getProjectedEndMinutes(hoursLogged, manualSummary);
                 ojtData.set(dateStr, {
                     type: "work",
                     hours: hoursLogged,
@@ -1160,8 +1208,15 @@ function calculateDate() {
         iterations += 1;
     }
 
-    const finalStr = finalEndDateStr ? new Date(finalEndDateStr).toDateString() : currentDate.toDateString();
-    document.getElementById("finalDateText").innerHTML = `Ends on: <strong>${finalStr}</strong>`;
+    if (finalEndDateStr) {
+        const finalLabel = formatEndDateLabel(finalEndDateStr, finalEndMinutes ?? DEFAULT_WORKDAY_START_MINUTES);
+        document.getElementById("finalDateText").innerHTML = `Ends on: <strong>${finalLabel}</strong>`;
+        return;
+    }
+
+    const fallbackDateStr = `${currentDate.getFullYear()}-${pad(currentDate.getMonth() + 1)}-${pad(currentDate.getDate())}`;
+    const fallbackLabel = formatEndDateLabel(fallbackDateStr, DEFAULT_WORKDAY_START_MINUTES);
+    document.getElementById("finalDateText").innerHTML = `Ends on: <strong>${fallbackLabel}</strong>`;
 }
 
 function startOfWeek(dateObj) {
@@ -1318,12 +1373,31 @@ function renderCalendar() {
         const weekStart = new Date(firstVisibleDate);
         weekStart.setDate(firstVisibleDate.getDate() + weekIndex * 7);
 
+        let weekTotalMinutes = 0;
+        let weekCellsHTML = "";
+
+        // Always scan the full 7-day row so adjacent-month overflow dates are included.
+        for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
+            const dayDate = new Date(weekStart);
+            dayDate.setDate(weekStart.getDate() + dayOffset);
+
+            const dayKey = `${dayDate.getFullYear()}-${pad(dayDate.getMonth() + 1)}-${pad(dayDate.getDate())}`;
+            const dayData = ojtData.get(dayKey);
+            if (dayData && dayData.type === "work" && Number.isFinite(dayData.hours)) {
+                weekTotalMinutes += Math.round(dayData.hours * 60);
+            }
+
+            const isFaded = dayDate.getMonth() !== month;
+            weekCellsHTML += generateCell(dayDate, isFaded);
+        }
+
         const isoWeek = getISOWeekNumber(new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 3));
         const ojtWeek = getOJTWeekNumber(weekStart, startDateVal);
         const ojtWeekClass = ojtWeek === "-" ? "na" : "";
+        const weekTotalLabel = formatMinutesAsHoursAndMinutes(weekTotalMinutes);
         const hoverText = ojtWeek === "-"
-            ? `Week ${isoWeek} • OJT Week not started`
-            : `Week ${isoWeek} • OJT Week ${ojtWeek}`;
+            ? `Week ${isoWeek} • OJT Week not started • Credited: ${weekTotalLabel}`
+            : `Week ${isoWeek} • OJT Week ${ojtWeek} • Credited: ${weekTotalLabel}`;
 
         grid.innerHTML += `
             <div class="week-cell ${ojtWeekClass}" title="${hoverText}">
@@ -1332,15 +1406,10 @@ function renderCalendar() {
                     <span class="week-sep">/</span>
                     <span class="week-ojt">${ojtWeek}</span>
                 </div>
+                <div class="week-total">${weekTotalLabel}</div>
             </div>
+            ${weekCellsHTML}
         `;
-
-        for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
-            const dayDate = new Date(weekStart);
-            dayDate.setDate(weekStart.getDate() + dayOffset);
-            const isFaded = dayDate.getMonth() !== month;
-            grid.innerHTML += generateCell(dayDate, isFaded);
-        }
     }
 
     attachCalendarDayEditors();

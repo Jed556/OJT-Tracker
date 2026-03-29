@@ -398,11 +398,11 @@ body.is-resizing-layout * {
 
 .week-cell {
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0;
-    padding: 0;
+    gap: 3px;
+    padding: 2px 0;
     position: relative;
     border: none;
     background: transparent;
@@ -433,6 +433,18 @@ body.is-resizing-layout * {
 }
 
 .week-cell.na .week-ojt {
+    color: var(--text-dim);
+}
+
+.week-total {
+    font-size: 0.64rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.week-cell.na .week-total {
     color: var(--text-dim);
 }
 
@@ -1235,7 +1247,11 @@ dialog::backdrop {
     }
 
     .week-ratio {
-        font-size: 0.82rem;
+        font-size: 0.8rem;
+    }
+
+    .week-total {
+        font-size: 0.56rem;
     }
 
     .week-hover-text {
