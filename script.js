@@ -861,6 +861,8 @@ function confirmClearAllEvents() {
 }
 
 function getEventForDate(dateStr) {
+    let firstMatchingEvent = null;
+
     for (const eventItem of events) {
         if (!eventItem.active) {
             continue;
@@ -869,11 +871,18 @@ function getEventForDate(dateStr) {
         const startStr = eventItem.start;
         const endStr = eventItem.end || eventItem.start;
         if (dateStr >= startStr && dateStr <= endStr) {
-            return getEventDisplayName(eventItem);
+            // Prefer user-created events when multiple events overlap on the same date.
+            if (eventItem.source === "user") {
+                return getEventDisplayName(eventItem);
+            }
+
+            if (!firstMatchingEvent) {
+                firstMatchingEvent = eventItem;
+            }
         }
     }
 
-    return null;
+    return firstMatchingEvent ? getEventDisplayName(firstMatchingEvent) : null;
 }
 
 function closeDayHoursDialog() {
@@ -1323,6 +1332,7 @@ function renderCalendar() {
         const dateStr = `${y}-${m}-${d}`;
 
         const data = ojtData.get(dateStr);
+        const eventName = getEventForDate(dateStr);
         let cellClass = `cal-cell${isFaded ? " faded" : ""}`;
         if (!isFaded) {
             cellClass += " clickable";
@@ -1351,12 +1361,16 @@ function renderCalendar() {
                 if (data.isEnd) {
                     badgesHTML += '<div class="badge end">End</div>';
                 }
-            } else if (data.type === "holiday") {
-                if (!isFaded) {
-                    cellClass += " holiday-day";
-                }
-                badgesHTML += `<div class="badge holiday" title="${data.name}">${data.name}</div>`;
             }
+        }
+
+        if (eventName) {
+            if (!isFaded && (!data || data.type !== "work")) {
+                cellClass += " holiday-day";
+            }
+
+            const safeEventName = escapeAttribute(eventName);
+            badgesHTML += `<div class="badge holiday" title="${safeEventName}">${safeEventName}</div>`;
         }
 
         const cellTooltipAttr = cellTooltip ? ` title="${escapeAttribute(cellTooltip)}"` : "";
