@@ -561,6 +561,7 @@ function buildManualEntrySummary(dateStr, entry) {
     tooltipLines.push(`Deduction: ${normalizedEntry.deductHours}h ${normalizedEntry.deductMinutes}m`);
 
     if (grossMinutes !== null && netMinutes !== null && timeBasedHours !== null) {
+        tooltipLines.push(`Gross Time: ${formatMinutesAsHoursAndMinutes(grossMinutes)}`);
         tooltipLines.push(`Net Time: ${formatMinutesAsHoursAndMinutes(netMinutes)} (${formatHours(timeBasedHours)})`);
     }
 
