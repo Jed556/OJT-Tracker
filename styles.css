@@ -765,10 +765,14 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 
 .settings-actions {
     margin-top: 12px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .settings-actions .btn-secondary {
-    width: 100%;
+    width: auto;
+    flex: 1 1 140px;
 }
 
 .holidays-pane {

@@ -695,6 +695,187 @@ function restoreSettingsFromStorage() {
     });
 }
 
+function getSettingsSnapshot() {
+    const settings = {};
+    SETTINGS_FIELD_IDS.forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) {
+            settings[id] = input.type === "checkbox" ? input.checked : input.value;
+        }
+    });
+
+    return settings;
+}
+
+function buildExportPayload() {
+    const dayHours = Object.fromEntries(manualHourOverrides.entries());
+    const theme = getStoredValue(STORAGE_KEYS.theme)
+        || document.documentElement.getAttribute("data-theme")
+        || "dark";
+    const primaryColor = getStoredValue(STORAGE_KEYS.primaryColor) || DEFAULT_PRIMARY_COLOR;
+
+    return {
+        format: "ojt-tracker-backup",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        data: {
+            settings: getSettingsSnapshot(),
+            events,
+            dayHours,
+            theme,
+            primaryColor,
+            calendarPaneWidth: getStoredValue(STORAGE_KEYS.calendarPaneWidth)
+        }
+    };
+}
+
+function downloadJsonFile(fileName, payload) {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+}
+
+function exportUserData() {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const fileName = `ojt-tracker-backup-${stamp}.json`;
+    const payload = buildExportPayload();
+    downloadJsonFile(fileName, payload);
+}
+
+function sanitizeSettings(rawSettings) {
+    const cleaned = {};
+    if (!rawSettings || typeof rawSettings !== "object") {
+        return cleaned;
+    }
+
+    SETTINGS_FIELD_IDS.forEach((id) => {
+        if (rawSettings[id] !== undefined) {
+            cleaned[id] = rawSettings[id];
+        }
+    });
+
+    return cleaned;
+}
+
+function normalizeImportPayload(rawPayload) {
+    if (!rawPayload || typeof rawPayload !== "object") {
+        return null;
+    }
+
+    const root = rawPayload.data && typeof rawPayload.data === "object"
+        ? rawPayload.data
+        : rawPayload;
+
+    const normalizedEvents = normalizeStoredEvents(Array.isArray(root.events) ? root.events : []);
+    const normalizedDayHours = Object.fromEntries(normalizeStoredDayHours(root.dayHours || {}).entries());
+    const normalizedSettings = sanitizeSettings(root.settings);
+
+    const theme = typeof root.theme === "string" ? root.theme : null;
+    const primaryColor = typeof root.primaryColor === "string" ? root.primaryColor : null;
+    const calendarPaneWidth = (typeof root.calendarPaneWidth === "string" || typeof root.calendarPaneWidth === "number")
+        ? `${root.calendarPaneWidth}`
+        : null;
+
+    return {
+        settings: normalizedSettings,
+        events: normalizedEvents,
+        dayHours: normalizedDayHours,
+        theme,
+        primaryColor,
+        calendarPaneWidth
+    };
+}
+
+function applyImportData(importData) {
+    Object.values(STORAGE_KEYS).forEach((key) => {
+        try {
+            localStorage.removeItem(key);
+        } catch {
+            // Ignore storage errors.
+        }
+    });
+
+    setStoredValue(STORAGE_KEYS.settings, JSON.stringify(importData.settings || {}));
+    setStoredValue(STORAGE_KEYS.events, JSON.stringify(importData.events || []));
+    setStoredValue(STORAGE_KEYS.dayHours, JSON.stringify(importData.dayHours || {}));
+
+    if (importData.theme) {
+        setStoredValue(STORAGE_KEYS.theme, importData.theme);
+    }
+
+    if (importData.primaryColor) {
+        setStoredValue(STORAGE_KEYS.primaryColor, importData.primaryColor);
+    }
+
+    if (importData.calendarPaneWidth) {
+        setStoredValue(STORAGE_KEYS.calendarPaneWidth, importData.calendarPaneWidth);
+    }
+}
+
+function handleImportFileSelection(event) {
+    const input = event.target;
+    const file = input && input.files ? input.files[0] : null;
+    if (!file) {
+        return;
+    }
+
+    const shouldImport = window.confirm("Importing will replace your current data. Continue?");
+    if (!shouldImport) {
+        input.value = "";
+        return;
+    }
+
+    file.text()
+        .then((text) => {
+            let parsed;
+            try {
+                parsed = JSON.parse(text);
+            } catch {
+                throw new Error("Invalid JSON file.");
+            }
+
+            const normalized = normalizeImportPayload(parsed);
+            if (!normalized) {
+                throw new Error("This file does not contain valid OJT Tracker data.");
+            }
+
+            applyImportData(normalized);
+            window.location.reload();
+        })
+        .catch((error) => {
+            window.alert(error && error.message ? error.message : "Import failed. Please try another file.");
+        })
+        .finally(() => {
+            input.value = "";
+        });
+}
+
+function initializeImportExport() {
+    const exportButton = document.getElementById("exportDataBtn");
+    const importButton = document.getElementById("importDataBtn");
+    const importInput = document.getElementById("importDataInput");
+
+    if (exportButton) {
+        exportButton.addEventListener("click", exportUserData);
+    }
+
+    if (importButton && importInput) {
+        importButton.addEventListener("click", () => {
+            importInput.click();
+        });
+    }
+
+    if (importInput) {
+        importInput.addEventListener("change", handleImportFileSelection);
+    }
+}
+
 function resetAppData() {
     const resetModal = document.getElementById("resetAppModal");
     if (resetModal && typeof resetModal.showModal === "function") {
@@ -1161,55 +1342,60 @@ function calculateDate() {
 
     const [y, m, d] = startDateVal.split("-").map(Number);
     let currentDate = new Date(y, m - 1, d);
-    let accumulated = 0;
+    let accumulatedMinutes = 0;
     let iterations = 0;
+    const targetMinutes = targetHours * 60;
 
-    while (accumulated < targetHours && iterations < 1500) {
+    while (accumulatedMinutes < targetMinutes && iterations < 1500) {
         const dateStr = `${currentDate.getFullYear()}-${pad(currentDate.getMonth() + 1)}-${pad(currentDate.getDate())}`;
         const dayOfWeek = currentDate.getDay();
         const configuredHours = hoursMap[dayOfWeek];
         const manualSummary = buildManualEntrySummary(dateStr, manualHourOverrides.get(dateStr));
         const hasManualOverride = manualSummary.hasOverride;
-        const manualHours = hasManualOverride ? manualSummary.effectiveHours : 0;
+        const manualMinutes = hasManualOverride ? Math.round(manualSummary.effectiveHours * 60) : 0;
 
         const holidayName = getEventForDate(dateStr);
-        const dailyHours = hasManualOverride ? manualHours : configuredHours;
-        const shouldRenderHoliday = Boolean(holidayName && (!hasManualOverride || dailyHours === 0));
+        const configuredMinutes = Math.round(configuredHours * 60);
+        const dailyMinutes = hasManualOverride ? manualMinutes : configuredMinutes;
+        const dailyHours = dailyMinutes / 60;
+        const shouldRenderHoliday = Boolean(holidayName && (!hasManualOverride || dailyMinutes === 0));
 
         if (shouldRenderHoliday) {
             ojtData.set(dateStr, { type: "holiday", name: holidayName });
-        } else if (dailyHours > 0) {
-            let hoursLogged = dailyHours;
-            let runningTotal = accumulated + dailyHours;
-            if (accumulated + dailyHours >= targetHours) {
-                hoursLogged = targetHours - accumulated;
-                accumulated = targetHours;
-                runningTotal = accumulated;
+        } else if (dailyMinutes > 0) {
+            let hoursLoggedMinutes = dailyMinutes;
+            let runningTotalMinutes = accumulatedMinutes + dailyMinutes;
+            if (accumulatedMinutes + dailyMinutes >= targetMinutes) {
+                hoursLoggedMinutes = targetMinutes - accumulatedMinutes;
+                accumulatedMinutes = targetMinutes;
+                runningTotalMinutes = accumulatedMinutes;
                 finalEndDateStr = dateStr;
-                finalEndMinutes = getProjectedEndMinutes(hoursLogged, manualSummary);
+                finalEndMinutes = getProjectedEndMinutes(hoursLoggedMinutes / 60, manualSummary);
                 ojtData.set(dateStr, {
                     type: "work",
-                    hours: hoursLogged,
-                    total: runningTotal,
+                    hours: hoursLoggedMinutes / 60,
+                    total: runningTotalMinutes / 60,
+                    totalMinutes: runningTotalMinutes,
                     isEnd: true,
                     isManual: hasManualOverride,
                     displayHours: hasManualOverride && manualSummary.displayHours !== null
                         ? manualSummary.displayHours
-                        : hoursLogged,
+                        : hoursLoggedMinutes / 60,
                     tooltip: hasManualOverride ? manualSummary.tooltip : ""
                 });
                 break;
             }
 
-            accumulated += dailyHours;
+            accumulatedMinutes += dailyMinutes;
             ojtData.set(dateStr, {
                 type: "work",
-                hours: hoursLogged,
-                total: runningTotal,
+                hours: dailyHours,
+                total: accumulatedMinutes / 60,
+                totalMinutes: accumulatedMinutes,
                 isManual: hasManualOverride,
                 displayHours: hasManualOverride && manualSummary.displayHours !== null
                     ? manualSummary.displayHours
-                    : hoursLogged,
+                    : dailyHours,
                 tooltip: hasManualOverride ? manualSummary.tooltip : ""
             });
         }
@@ -1354,11 +1540,15 @@ function renderCalendar() {
                 }
                 const hoursBadgeClass = data.isManual ? "badge hours credited" : "badge hours";
                 const perDayHours = data.displayHours ?? data.hours;
-                const displayedHours = showPerDayHoursCard() ? perDayHours : data.total;
+                const displayedMinutes = Number.isFinite(data.totalMinutes)
+                    ? data.totalMinutes
+                    : Math.round(data.total * 60);
                 if (data.tooltip) {
                     cellTooltip = data.tooltip;
                 }
-                badgesHTML += `<div class="${hoursBadgeClass}">${formatHours(displayedHours)}</div>`;
+                badgesHTML += showPerDayHoursCard()
+                    ? `<div class="${hoursBadgeClass}">${formatHours(perDayHours)}</div>`
+                    : `<div class="${hoursBadgeClass}">${formatMinutesAsHoursAndMinutes(displayedMinutes)}</div>`;
                 if (data.isEnd) {
                     badgesHTML += '<div class="badge end">End</div>';
                 }
@@ -1735,9 +1925,10 @@ document.addEventListener("DOMContentLoaded", () => {
     initializeDisplaySettings();
     initializeSettingsDrawer();
     initializeLayoutSplitter();
+    initializeImportExport();
     updateAll();
 
-    const inputs = document.querySelectorAll(".controls-pane input");
+    const inputs = document.querySelectorAll(".controls-pane input:not(.no-setting)");
     inputs.forEach((input) => {
         input.addEventListener("input", () => {
             saveSettingsToStorage();
